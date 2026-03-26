@@ -46,6 +46,10 @@ static void locset_del_stk8 (LocSet* s, UINT32 v) { locset_del(s, (DataLoc){LOC_
 static BOOLEAN locset_empty(const LocSet* s) { return s->count == 0; }
 
 static void locset_print(const LocSet* s) {
+    if (s->count == 0) {
+        Print_patcher("WARRNING: LocSet empty, using fallback. Will Match any LDRB\n");
+        return;
+    }
     Print_patcher("  LocSet{");
     for (INT32 i = 0; i < s->count; ++i) {
         if (i) Print_patcher(", ");
@@ -150,10 +154,6 @@ static INT32 track_forward_patch_strb(CHAR8* buffer, INT32 size, INT32 ldrb_off,
             Print_patcher("0x%X: function boundary, stop\n", off);
             break;
         }
-        if (locset_empty(&set)) {
-            Print_patcher("  LocSet empty, stop\n");
-            break;
-        }
 
         switch (d.type) {
 
@@ -167,6 +167,7 @@ static INT32 track_forward_patch_strb(CHAR8* buffer, INT32 size, INT32 ldrb_off,
                 } else if (locset_has_stk64(&set, d.imm)) {
                     Print_patcher("  0x%X: STR X%d,[SP,#0x%X] overwrite stk64 -> del\n", off, d.rt, d.imm);
                     locset_del_stk64(&set, d.imm);
+                    locset_print(&set);
                 }
             }
             break;
@@ -181,6 +182,7 @@ static INT32 track_forward_patch_strb(CHAR8* buffer, INT32 size, INT32 ldrb_off,
                 } else if (locset_has_reg(&set, (INT8)d.rt)) {
                     Print_patcher("  0x%X: LDR X%d,[SP,#0x%X] overwrite reg -> del\n", off, d.rt, d.imm);
                     locset_del_reg(&set, (INT8)d.rt);
+                    locset_print(&set);
                 }
             }
             break;
@@ -195,6 +197,7 @@ static INT32 track_forward_patch_strb(CHAR8* buffer, INT32 size, INT32 ldrb_off,
                 } else if (locset_has_stk64(&set, d.imm)) {
                     Print_patcher("  0x%X: STR W%d,[SP,#0x%X] overwrite stk -> del\n", off, d.rt, d.imm);
                     locset_del_stk64(&set, d.imm);
+                    locset_print(&set);
                 }
             }
             break;
@@ -209,6 +212,7 @@ static INT32 track_forward_patch_strb(CHAR8* buffer, INT32 size, INT32 ldrb_off,
                 } else if (locset_has_reg(&set, (INT8)d.rt)) {
                     Print_patcher("  0x%X: LDR W%d,[SP,#0x%X] overwrite reg -> del\n", off, d.rt, d.imm);
                     locset_del_reg(&set, (INT8)d.rt);
+                    locset_print(&set);
                 }
             }
             break;
@@ -219,6 +223,7 @@ static INT32 track_forward_patch_strb(CHAR8* buffer, INT32 size, INT32 ldrb_off,
                 Print_patcher("  0x%X: LDRB W%d,[X%d,#0x%X] overwrite reg -> del\n",
                        off, d.rt, d.rn, d.imm);
                 locset_del_reg(&set, (INT8)d.rt);
+                locset_print(&set);
             }
             break;
 
@@ -231,6 +236,7 @@ static INT32 track_forward_patch_strb(CHAR8* buffer, INT32 size, INT32 ldrb_off,
             } else if (locset_has_reg(&set, (INT8)d.rt)) {
                 Print_patcher("  0x%X: MOV X%d,X%d overwrite -> del\n", off, d.rt, d.rm);
                 locset_del_reg(&set, (INT8)d.rt);
+                locset_print(&set);
             }
             break;
 
@@ -243,6 +249,7 @@ static INT32 track_forward_patch_strb(CHAR8* buffer, INT32 size, INT32 ldrb_off,
             } else if (locset_has_reg(&set, (INT8)d.rt)) {
                 Print_patcher("  0x%X: MOV W%d,W%d overwrite -> del\n", off, d.rt, d.rm);
                 locset_del_reg(&set, (INT8)d.rt);
+                locset_print(&set);
             }
             break;
 
@@ -251,8 +258,9 @@ static INT32 track_forward_patch_strb(CHAR8* buffer, INT32 size, INT32 ldrb_off,
         case INST_STRB_POST:
         case INST_STRB_PRE: {
             StrbInfo si = decode_any_strb(d.raw);
-            if (si.valid && locset_has_reg(&set, (INT8)si.rt)) {
+            if (si.valid && (locset_has_reg(&set, (INT8)si.rt)||(locset_empty(&set)&&off > anchor_off))) {
                 if (off > anchor_off) {
+
                     #ifndef DISABLE_PRINT
                     if (si.rn == 31) {
                         Print_patcher("  0x%X: STRB W%d,[SP,#0x%X] ** SINK (after anchor0x%X) **\n",
